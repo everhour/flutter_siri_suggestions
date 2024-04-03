@@ -155,6 +155,11 @@ NSString *kFn_deleteSavedUserActivitiesWithPersistentIdentifiers = @"deleteSaved
         [userActivity resignCurrent];
         [userActivity invalidate];
     }
+
+    NSString *title=@"Custom";
+    if(userActivity.title) {
+        title = userActivity.title;
+    }
     
     NSMutableDictionary *dict = [@{ @"title": userActivity.title, @"key" : [userActivity.activityType stringByReplacingOccurrencesOfString:[NSString stringWithFormat:@"%@-", kPluginName] withString:@""] } mutableCopy];    
       
