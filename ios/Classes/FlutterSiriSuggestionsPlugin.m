@@ -161,7 +161,7 @@ NSString *kFn_deleteSavedUserActivitiesWithPersistentIdentifiers = @"deleteSaved
         title = userActivity.title;
     }
     
-    NSMutableDictionary *dict = [@{ @"title": userActivity.title, @"key" : [userActivity.activityType stringByReplacingOccurrencesOfString:[NSString stringWithFormat:@"%@-", kPluginName] withString:@""] } mutableCopy];    
+    NSMutableDictionary *dict = [@{ @"title": title, @"key" : [userActivity.activityType stringByReplacingOccurrencesOfString:[NSString stringWithFormat:@"%@-", kPluginName] withString:@""] } mutableCopy];    
       
     if(userActivity.userInfo) [dict setObject:userActivity.userInfo forKey:@"userInfo"];
         
