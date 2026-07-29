@@ -7,6 +7,7 @@
 
 @implementation FlutterSiriSuggestionsPlugin {
     FlutterMethodChannel *_channel;
+    NSUserActivity *_pendingLaunchActivity;
 }
 
 NSString *kPluginName = @"flutter_siri_suggestions";
@@ -22,6 +23,9 @@ NSString *kFn_deleteSavedUserActivitiesWithPersistentIdentifiers = @"deleteSaved
                                      binaryMessenger:[registrar messenger]];
     FlutterSiriSuggestionsPlugin* instance = [[FlutterSiriSuggestionsPlugin alloc] initWithChannel:channel];
     [registrar addApplicationDelegate:instance];
+    if (@available(iOS 13.0, *)) {
+        [registrar addSceneDelegate:instance];
+    }
     [registrar addMethodCallDelegate:instance channel:channel];
 }
 
@@ -185,36 +189,81 @@ NSString *kFn_deleteSavedUserActivitiesWithPersistentIdentifiers = @"deleteSaved
 }
 
 - (UIViewController*)rootViewController {
+    // Under UIScene the scene delegate owns the window and UIApplicationDelegate.window is
+    // nil. Any window scene will do: at startup none is foregroundActive yet.
+    if (@available(iOS 13.0, *)) {
+        UIViewController *inactiveRootViewController = nil;
+
+        for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+            if (![scene isKindOfClass:UIWindowScene.class]) continue;
+
+            for (UIWindow *window in ((UIWindowScene *)scene).windows) {
+                if (!window.isKeyWindow) continue;
+
+                if (scene.activationState == UISceneActivationStateForegroundActive) {
+                    return window.rootViewController;
+                }
+                if (!inactiveRootViewController) {
+                    inactiveRootViewController = window.rootViewController;
+                }
+            }
+        }
+
+        if (inactiveRootViewController) return inactiveRootViewController;
+    }
     return [[[[UIApplication sharedApplication] delegate] window] rootViewController];
 }
 
 #pragma mark - Application
 
-
-- (void)applicationWillEnterForeground:(UIApplication *)application {
-}
-
-- (void)applicationDidEnterBackground:(UIApplication *)application {
-    
-}
-
-- (BOOL)application:(UIApplication *)application willContinueUserActivityWithType:(NSString *)userActivityType {
-    return true;
-}
-
+// Only reached by apps that have not adopted UIScene; the scene methods below cover the rest.
 - (BOOL)application:(UIApplication *)application continueUserActivity:(NSUserActivity *)userActivity restorationHandler:(void (^)(NSArray *UIUserActivityRestoring))restorationHandler {
+    return [self handleUserActivity:userActivity];
+}
 
-    if ([[userActivity activityType] hasPrefix:kPluginName]) {
-        [self onAwake:userActivity method: @"onLaunch"];
-        return true;
-    } else 
-      [self onAwake:userActivity method: @"failedToLaunchWithActivity"];
+#pragma mark - Scene
+
+- (BOOL)scene:(UIScene *)scene
+    willConnectToSession:(UISceneSession *)session
+                 options:(UISceneConnectionOptions *)connectionOptions API_AVAILABLE(ios(13.0)) {
+
+    for (NSUserActivity *userActivity in connectionOptions.userActivities) {
+        if ([self isPluginUserActivity:userActivity]) {
+            // Nothing is listening on the channel this early; deliver once the scene is active.
+            _pendingLaunchActivity = userActivity;
+            return true;
+        }
+    }
     return false;
-    
-    
+}
+
+- (void)sceneDidBecomeActive:(UIScene *)scene API_AVAILABLE(ios(13.0)) {
+    if (_pendingLaunchActivity) {
+        NSUserActivity *userActivity = _pendingLaunchActivity;
+        _pendingLaunchActivity = nil;
+        [self handleUserActivity:userActivity];
+    }
+}
+
+- (BOOL)scene:(UIScene *)scene continueUserActivity:(NSUserActivity *)userActivity API_AVAILABLE(ios(13.0)) {
+    return [self handleUserActivity:userActivity];
 }
 
 #pragma mark - internal methods
+
+- (BOOL)isPluginUserActivity:(NSUserActivity *)userActivity {
+    return [[userActivity activityType] hasPrefix:kPluginName];
+}
+
+- (BOOL)handleUserActivity:(NSUserActivity *)userActivity {
+    // Leave other plugins' activities alone: onAwake: invalidates whatever it touches.
+    if (![self isPluginUserActivity:userActivity]) {
+        return false;
+    }
+
+    [self onAwake:userActivity method: @"onLaunch"];
+    return true;
+}
 
 - (void) _deleteSavedUserActivitiesWithPersistentIdentifiers:(NSArray*)persistentIdentifiers completionHandler:(void(^)(void))successHandler failedHandler:(void(^)(void))failedHandler {
     
